@@ -34,23 +34,23 @@ constexpr size_t CountPlaceholders(const char* formatString)
 // === GetArgsSize ===
 
 // base case
-inline size_t GetArgsSize() { return 0; }
+static inline size_t GetArgsSize() { return 0; }
 
 // size of a single argument (trivially-copyable version)
 template<typename Arg>
-size_t GetArgSize(const Arg& arg)
+static size_t GetArgSize(const Arg& arg)
 {
 	static_assert(std::is_trivially_copyable<Arg>::value, "this function is supposed to be used only with trivially-copyable types");
 	return sizeof(arg);
 }
 
-inline size_t GetArgSize(const char* str) { return std::strlen(str) + 1; }
-inline size_t GetArgSize(const std::string& s) { return s.length() + 1; }
+static inline size_t GetArgSize(const char* str) { return std::strlen(str) + 1; }
+static inline size_t GetArgSize(const std::string& s) { return s.length() + 1; }
 
 
 // process a list of arguments
 template<typename Arg, typename... Args>
-size_t GetArgsSize(const Arg& arg, const Args... args)
+static size_t GetArgsSize(const Arg& arg, const Args... args)
 {
 	return GetArgSize(arg) + GetArgsSize(args...);
 }
@@ -59,20 +59,20 @@ size_t GetArgsSize(const Arg& arg, const Args... args)
 
 // Note: we _must_ have an option for non-trivially copyable args (SFINAE)
 template <typename T>
-char* CopyArg(char* argsData, T arg)
+static char* CopyArg(char* argsData, T arg)
 {
 	static_assert(std::is_trivially_copyable<T>::value, "this function is supposed to be used only with trivially-copyable types");
-	std::memcpy(argsData, &arg, sizeof(arg));
+	//std::memcpy(argsData, &arg, sizeof(arg));
+	*reinterpret_cast<T*>(argsData) = arg;
 	return argsData + sizeof(arg);
 }
 
-inline char* CopyArg(char* argsData, const char* str)
+static inline char* CopyArg(char* argsData, const char* str)
 {
 	std::strcpy(argsData, str);
 	return argsData + std::strlen(str) + 1; // suboptimal
 }
-
-inline char* CopyArg(char* argsData, const std::string& s)
+static inline char* CopyArg(char* argsData, const std::string& s)
 {
 	return CopyArg(argsData, s.c_str());
 }
@@ -84,7 +84,7 @@ inline char* CopyArgs(char* argsData) { return argsData; }
 
 // write a single arg to the buffer and continue with the tail
 template<typename Arg, typename ... Args>
-char* CopyArgs(char* argsData, const Arg& arg, const Args&... args)
+static char* CopyArgs(char* argsData, const Arg& arg, const Args&... args)
 {
 	argsData = CopyArg(argsData, arg);
 	return CopyArgs(argsData, args...);
@@ -94,14 +94,14 @@ char* CopyArgs(char* argsData, const Arg& arg, const Args&... args)
 
 // terminator
 template<typename... Args>
-std::enable_if_t<sizeof...(Args)==0> FormatArgs(std::ostream& s, const char* format, const char* /*buffer*/)
+static std::enable_if_t<sizeof...(Args)==0> FormatArgs(std::ostream& s, const char* format, const char* /*buffer*/)
 {
 	s << format << std::endl;
 }
 
 // TODO specialize for other types
 template<typename Arg>
-const char* FormatArg(std::ostream& outputStream, const char* argsData)
+static const char* FormatArg(std::ostream& outputStream, const char* argsData)
 {
 	const Arg* arg = reinterpret_cast<const Arg*>(argsData);
 	outputStream << *arg;
@@ -122,11 +122,8 @@ inline const char* FormatArg<std::string>(std::ostream& outputStream, const char
 	return FormatArg<const char*>(outputStream, argsData);
 }
 
-
-
-
 template<typename Arg, typename... Args>
-void FormatArgs(std::ostream& s, const char* format, const char* buffer)
+static void FormatArgs(std::ostream& s, const char* format, const char* buffer)
 {
 	const char* placeholder = std::strstr(format, "%");
 	s.write(format, placeholder-format);
@@ -153,7 +150,7 @@ struct Header
 
 // write the given log line to a buffer
 template <typename... Args>
-void WriteLog(const char* formatString, const Args&... args)
+static void WriteLog(const char* formatString, const Args&... args)
 {
 	// calculate space needed in buffer
 	size_t argsSize = GetArgsSize<Args...>(args...);
