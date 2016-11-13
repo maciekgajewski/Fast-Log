@@ -15,9 +15,8 @@ void Consume();
 
 namespace Detail {
 
-using FormatFunction = void(*)(std::ostream& stream, const char* buffer);
+using FormatFunction = void(*)(std::ostream& stream, const char* format, const char* buffer);
 
-std::vector<char> gBuffer;
 
 // helper
 template <typename... Types>
@@ -30,6 +29,8 @@ constexpr size_t CountPlaceholders(const char* formatString)
 		(formatString[0] == '%' ? 1u : 0u) + CountPlaceholders(formatString + 1));
 }
 
+// === GetArgsSize ===
+
 // base case
 inline size_t GetArgsSize() { return 0; }
 // size of a single argument
@@ -41,6 +42,8 @@ size_t GetArgsSize(const Arg& arg, const Args... args)
 {
 	return GetArgSize(arg) + GetArgsSize(args...);
 }
+
+// === CopyArgs ===
 
 // Note: we could have an option for non-trivially copyable args (SFINAE)
 template <typename T>
@@ -61,12 +64,48 @@ char* CopyArgs(char* argsData, const Arg& arg, const Args&... args)
 	return CopyArgs(argsData, args...);
 }
 
+// === Formatting ===
+
+// terminator
+template<typename... Args>
+std::enable_if_t<sizeof...(Args)==0> FormatArgs(std::ostream& s, const char* format, const char* /*buffer*/)
+{
+	s << format << std::endl;
+}
+
+// TODO specialize for other types
+template<typename Arg>
+const char* FormatArg(std::ostream& outputStream, const char* argsData) {
+	const Arg* arg = reinterpret_cast<const Arg*>(argsData);
+	outputStream << *arg;
+	return argsData + sizeof(Arg);
+}
+
+template<typename Arg, typename... Args>
+void FormatArgs(std::ostream& s, const char* format, const char* buffer)
+{
+	const char* placeholder = std::strstr(format, "%");
+	s.write(format, placeholder-format);
+	FormatArgs<Args...>(s, placeholder+1,  FormatArg<Arg>(s, buffer));
+}
+
+
+// === Log buffer managemebnt and protocol ==
+
+// Obtains continous buffer to store log args in the fatstest possible way
+char* GetWriteBuffer(int size);
+
+// Return buffer to the next message, nullptr if none
+char* GetNextReadBuffer();
+
 struct Header
 {
 	size_t ArgsSize;
 	const char* FormatString;
 	FormatFunction Formatter;
 };
+
+// === Writing to buffer ===
 
 // write the given log line to a buffer
 template <typename... Args>
@@ -75,18 +114,15 @@ void WriteLog(const char* formatString, const Args&... args)
 	// calculate space needed in buffer
 	size_t argsSize = GetArgsSize<Args...>(args...);
 
-	// grow the buffer
-	size_t offset = gBuffer.size();
-	gBuffer.resize(gBuffer.size() + sizeof(Header) + argsSize);
-
-	char* data = gBuffer.data() + offset;
+	// get buffer
+	char* data = GetWriteBuffer(argsSize + sizeof(Header));
 	Header* header = reinterpret_cast<Header*>(data);
 	char* argsBuffer = data + sizeof(Header);
 
 	// store crucial info
 	header->ArgsSize = argsSize;
 	header->FormatString = formatString;
-	header->Formatter = nullptr; // TODO
+	header->Formatter = FormatArgs<Args...>; // TODO
 
 	// copy args in the buffer
 	char* end = CopyArgs(argsBuffer, args...);
