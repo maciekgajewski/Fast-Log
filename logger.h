@@ -4,6 +4,8 @@
 #include <ostream>
 #include <cstring>
 #include <cassert>
+#include <type_traits>
+#include <string>
 
 namespace Logger {
 	
@@ -33,9 +35,19 @@ constexpr size_t CountPlaceholders(const char* formatString)
 
 // base case
 inline size_t GetArgsSize() { return 0; }
-// size of a single argument
+
+// size of a single argument (trivially-copyable version)
 template<typename Arg>
-size_t GetArgSize(const Arg& arg) { return sizeof(arg); }
+size_t GetArgSize(const Arg& arg)
+{
+	static_assert(std::is_trivially_copyable<Arg>::value, "this function is supposed to be used only with trivially-copyable types");
+	return sizeof(arg);
+}
+
+inline size_t GetArgSize(const char* str) { return std::strlen(str) + 1; }
+inline size_t GetArgSize(const std::string& s) { return s.length() + 1; }
+
+
 // process a list of arguments
 template<typename Arg, typename... Args>
 size_t GetArgsSize(const Arg& arg, const Args... args)
@@ -45,13 +57,27 @@ size_t GetArgsSize(const Arg& arg, const Args... args)
 
 // === CopyArgs ===
 
-// Note: we could have an option for non-trivially copyable args (SFINAE)
+// Note: we _must_ have an option for non-trivially copyable args (SFINAE)
 template <typename T>
 char* CopyArg(char* argsData, T arg)
 {
+	static_assert(std::is_trivially_copyable<T>::value, "this function is supposed to be used only with trivially-copyable types");
 	std::memcpy(argsData, &arg, sizeof(arg));
 	return argsData + sizeof(arg);
 }
+
+inline char* CopyArg(char* argsData, const char* str)
+{
+	std::strcpy(argsData, str);
+	return argsData + std::strlen(str) + 1; // suboptimal
+}
+
+inline char* CopyArg(char* argsData, const std::string& s)
+{
+	return CopyArg(argsData, s.c_str());
+}
+
+// specializations
 
 // base case (terminator)
 inline char* CopyArgs(char* argsData) { return argsData; }
@@ -75,11 +101,29 @@ std::enable_if_t<sizeof...(Args)==0> FormatArgs(std::ostream& s, const char* for
 
 // TODO specialize for other types
 template<typename Arg>
-const char* FormatArg(std::ostream& outputStream, const char* argsData) {
+const char* FormatArg(std::ostream& outputStream, const char* argsData)
+{
 	const Arg* arg = reinterpret_cast<const Arg*>(argsData);
 	outputStream << *arg;
 	return argsData + sizeof(Arg);
 }
+
+template<>
+inline const char* FormatArg<const char*>(std::ostream& outputStream, const char* argsData)
+{
+	auto l = std::strlen(argsData);
+	outputStream.write(argsData, l);
+	return argsData + l + 1;
+}
+
+template<>
+inline const char* FormatArg<std::string>(std::ostream& outputStream, const char* argsData)
+{
+	return FormatArg<const char*>(outputStream, argsData);
+}
+
+
+
 
 template<typename Arg, typename... Args>
 void FormatArgs(std::ostream& s, const char* format, const char* buffer)
