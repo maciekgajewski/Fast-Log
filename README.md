@@ -1,4 +1,4 @@
-Example logger system using variadic temppleates and compile-time string parsing.
+Example logg system using variadic templates and compile-time string parsing.
 
 This function:
 
@@ -32,12 +32,14 @@ compiles into
 
 And this one:
 
+```
 void log1(const std::string& str, int number)
 {
 	LOG("str=%, number=%", str, number);
 }
+```
 
-into:
+compiles into:
 
 ```
         subq    $24, %rsp
@@ -47,7 +49,7 @@ into:
         addq    $24, %rsp
         ret
 ```
-Where WrtieLog<std::string, int> is:
+Where WriteLog<std::string, int> is:
 
 ```
         pushq   %r13
@@ -81,6 +83,6 @@ Where WrtieLog<std::string, int> is:
         ret
         
 ```
-(Quite a lot of push/pops taht could be avoided when inlined...)
+(Quite a lot of push/pops that could be avoided when inlined...)
 
 
